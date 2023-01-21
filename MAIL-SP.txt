@@ -1,0 +1,109 @@
+ALTER PROCEDURE  [dbo].[proc_performance_report_mail]  
+AS  
+BEGIN  
+ declare @agent_name varchar(50);  
+ declare @content as nvarchar(max)='';  
+ declare @content1 as nvarchar(max)='';  
+ declare @production_numbers varchar(10)  
+ declare @tat_exceeds varchar(10)  
+ declare @tat_achieved_percent varchar(10)  
+ declare @sno int  
+ declare @subject varchar(60)  
+ declare @tat_reasons varchar(200)  
+ declare @count1 varchar(10)  
+    
+ if object_id('tempdb..#tbl_temp') is not null    
+ begin   
+  drop  table #tbl_temp   
+ end;    
+    
+ set @content='<div align=center><table border=1 cellpadding =0 cellspacing=0 align =center>'  
+ set @content = @content + '<tr><td>&nbsp;SNO&nbsp;</td><td>&nbsp;AGENT NAME&nbsp;</td>'  
+ set @content = @content + '<td>&nbsp;PRODUCTION NUMBERS&nbsp;</td><td>&nbsp;TAT EXCEEDS&nbsp;</td>'  
+ set @content = @content + '<td>&nbsp;TAT ACHIEVED %&nbsp;</td><td>&nbsp;QUALITY&nbsp;</td></tr>'   
+  
+ select agent_name,reason into #tbl_temp from dbo.tbl_report with (nolock) where  convert(date,start_time)=convert(date,getdate()-1)  
+ declare cursor1 cursor static for  
+ select  agent_name [AGENT NAME],production_numbers [Production Numbers],tat_exceeds [TAT Exceeds],   
+ (production_numbers-tat_exceeds )* 100/production_numbers as [TAT Achieved %]   
+ from (select  agent_name,count(*) as production_numbers,(select  count(*) from #tbl_temp where   
+ agent_name =a.agent_name and reason<>'' ) as tat_exceeds  from  #tbl_temp  as a group by  agent_name) as aa     
+ order by agent_name;   
+ open cursor1  
+  set @sno =0   
+  set @agent_name =''  
+  set @production_numbers =''  
+  set @tat_exceeds =''  
+  set @tat_achieved_percent =''  
+  fetch first from cursor1 into @agent_name,@production_numbers,@tat_exceeds ,@tat_achieved_percent  
+  while @@FETCH_STATUS <>-1  
+  begin  
+   set @agent_name =isnull(@agent_name ,'')  
+   set @production_numbers =isnull(@production_numbers ,'')  
+   set @tat_exceeds =isnull(@tat_exceeds ,'')  
+   set @tat_achieved_percent =isnull(@tat_achieved_percent ,'')  
+   set @sno=@sno +1   
+   set @content=@content + '<tr><td>&nbsp;' +ltrim(@sno) + '&nbsp;</td>'  
+   set @content=@content + '<td>&nbsp;' + @agent_name  + '&nbsp;</td>'  
+   set @content=@content + '<td>&nbsp;' + @production_numbers  + '&nbsp;</td>'  
+   set @content=@content + '<td>&nbsp;' + @tat_exceeds  + '&nbsp;</td>'  
+   set @content=@content + '<td>&nbsp;' + @tat_achieved_percent  + '&nbsp;</td><td>&nbsp;</td></tr>'  
+   set @agent_name =''  
+   set @production_numbers =''  
+   set @tat_exceeds =''  
+   set @tat_achieved_percent =''  
+   fetch next from cursor1 into @agent_name,@production_numbers,@tat_exceeds ,@tat_achieved_percent  
+  end  
+ close cursor1  
+ deallocate cursor1  
+  
+    
+ set @content1 =''  
+ declare cursor1 cursor static for  
+ select reason as [TAT Reasons],count(*)as count1 from #tbl_temp where reason <>''  group by reason order by  reason;   
+ open cursor1  
+  set @tat_exceeds =''  
+  set @count1 =''  
+  fetch first from cursor1 into @tat_reasons,@count1  
+  while @@FETCH_STATUS <>-1  
+  begin  
+   set @tat_reasons =isnull(@tat_reasons ,'')  
+   set @count1 =isnull(@count1 ,'')  
+   set @content1=@content1 + '<tr><td>&nbsp;' +ltrim(@tat_reasons) + '&nbsp;</td>'  
+   set @content1=@content1 + '<td>&nbsp;' + ltrim(@count1)  + '&nbsp;</td></tr>'  
+   
+   set @tat_exceeds =''  
+   set @count1 =''  
+   fetch next from cursor1 into @tat_reasons,@count1  
+  end  
+ close cursor1  
+ deallocate cursor1  
+  
+ if @content1 <>''  
+ begin  
+  set @content = @content + '</table></div></br></br>'  
+  set @content = @content + '<div align=center><table border=1 cellpadding =0 cellspacing=0 align =center>'  
+  set @content = @content + '<tr><td>&nbsp;TAT REASONS&nbsp;</td><td>&nbsp;COUNT&nbsp;</td></tr>' + @content1   
+ end  
+  
+ set @content = @content + '</table></div>'  
+   
+  
+ if @sno >0  
+ begin  
+  set @subject= 'Performance Report - LLI Casualty Team - ' + convert(varchar,getdate()-1,103)     
+  set @content ='<html><body><div align=center>' + @subject  +'</div></br>' + @content + '</body></html>'   
+    
+  EXEC msdb.dbo.sp_send_dbmail @profile_name='ScreenScrapper',  
+  --EXEC msdb.dbo.sp_send_dbmail @profile_name='GCC Loading Auto Email',  
+  @recipients='mugundhan.ramamoorthy@meritgroup.co.uk;lli14.data@meritgroup.co.uk;lli3.casualty@meritgroup.co.uk;lli4.casualty@meritgroup.co.uk;sandheep.shivakumar@meritgroup.co.uk;dinesh.krishnan@meritgroup.co.uk;satheesh.sethu@meritgroup.co.uk;ramakrishnan.sivasankaran@meritgroup.co.uk;lli2.casualty@meritgroup.co.uk;lily.kavitha@meritgroup.co.uk',    
+  @subject=@subject,  
+  @body_format = 'HTML',  
+  @body= @content  
+ end  
+  
+ if object_id('tempdb..#tbl_temp') is not null    
+ begin    
+  drop  table #tbl_temp   
+ end  
+END  
